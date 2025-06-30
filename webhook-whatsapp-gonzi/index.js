@@ -24,42 +24,67 @@ app.post("/webhook", async (req, res) => {
       req.body.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
 
     const contactName =
-      req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.name ||
-      contact?.profile?.name ||
-      "Sin nombre"; // Valor por defecto si no hay nombre
+      message?.name || contact?.profile?.name || "Sin nombre";
 
     const fromNumber = message.from;
+
+    const messageType = message.type;
     const messageText =
-      message.type === "text"
+      messageType === "text"
         ? message.text.body
-        : message.type === "button"
+        : messageType === "button"
         ? message.button.text
         : "";
 
-    // Palabras clave en español e inglés
+    // Palabras clave válidas
     const keywords = {
       es: ["ACEPTAR", "RECHAZAR"],
       en: ["ACCEPT", "DECLINE"],
     };
 
-    // Detectar si el mensaje contiene palabras clave
-    let responseLanguage = null;
-    if (keywords.es.includes(messageText.toUpperCase())) {
-      responseLanguage = "es"; // Español
-    } else if (keywords.en.includes(messageText.toUpperCase())) {
-      responseLanguage = "en"; // Inglés
-    } else {
-      // Detectar idioma general para otros mensajes
-      responseLanguage = /[a-zA-Z]/.test(messageText) ? "en" : "es";
+    // Detectar idioma general
+    let responseLanguage = /[a-zA-Z]/.test(messageText) ? "en" : "es";
+    if (keywords.es.includes(messageText.toUpperCase())) responseLanguage = "es";
+    if (keywords.en.includes(messageText.toUpperCase())) responseLanguage = "en";
+
+    // Mensajes de error automáticos
+    const greeting = responseLanguage === "es" ? "¡Hola! 😊" : "Hi! 😊";
+    const invalidReply =
+      responseLanguage === "es"
+        ? `${greeting} Este número solo admite respuestas mediante botones. Si quieres continuar la conversación, pulsa aquí: https://wa.me/34611417836`
+        : `${greeting} This number only accepts replies via buttons. To continue the conversation, click here: https://wa.me/34611417836`;
+
+    // ¿Es una respuesta válida?
+    const isValid =
+      messageType === "button" ||
+      keywords.es.includes(messageText.toUpperCase()) ||
+      keywords.en.includes(messageText.toUpperCase());
+
+    if (!isValid) {
+      // No se reenvía a Make. Solo se responde y se termina.
+      try {
+        console.log("Mensaje inválido. Enviando aviso automático...");
+        await axios({
+          method: "POST",
+          url: `https://graph.facebook.com/v18.0/${business_phone_number_id}/messages`,
+          headers: {
+            Authorization: `Bearer ${GRAPH_API_TOKEN}`,
+          },
+          data: {
+            messaging_product: "whatsapp",
+            to: fromNumber,
+            text: { body: invalidReply },
+            context: { message_id: message.id },
+          },
+        });
+      } catch (error) {
+        console.error("Error enviando mensaje de aviso:", error.response?.data || error.message);
+      }
+
+      return res.sendStatus(200);
     }
 
-    // Saludo dinámico SIN incluir el nombre
-    const greeting =
-      responseLanguage === "es"
-        ? "¡Hola! 😊"
-        : "Hi! 😊";
-
-    // Respuestas automáticas basadas en idioma
+    // Respuesta automática para mensajes válidos
     const autoResponses = {
       es: {
         text: `${greeting} Este es un mensaje automático. No podemos procesar tu mensaje en este número. Por favor, haz clic aquí para continuar la conversación: https://wa.me/34611417836.`,
@@ -73,21 +98,21 @@ app.post("/webhook", async (req, res) => {
 
     const autoMessage =
       responseLanguage === "es"
-        ? message.type === "button"
+        ? messageType === "button"
           ? autoResponses.es.button
           : autoResponses.es.text
-        : message.type === "button"
+        : messageType === "button"
         ? autoResponses.en.button
         : autoResponses.en.text;
 
-    // Enviar datos al webhook de Make
+    // Enviar datos válidos al webhook de Make
     try {
       console.log("Enviando datos a Make...");
       await axios({
         method: "POST",
         url: "https://hook.eu2.make.com/lqbq30m8ga5igx7sajt0v1pyip6xyp3b",
         data: {
-          name: contactName, // Esto sigue enviándose a Make
+          name: contactName,
           message: messageText,
           from: fromNumber,
           id: message.id,
@@ -95,13 +120,10 @@ app.post("/webhook", async (req, res) => {
       });
       console.log("Mensaje enviado al webhook de Make correctamente.");
     } catch (error) {
-      console.error(
-        "Error enviando datos al webhook de Make:",
-        error.response?.data || error.message
-      );
+      console.error("Error enviando datos a Make:", error.response?.data || error.message);
     }
 
-    // Enviar respuesta automática al usuario
+    // Responder al usuario
     try {
       console.log("Enviando respuesta automática al usuario...");
       await axios({
@@ -119,13 +141,10 @@ app.post("/webhook", async (req, res) => {
       });
       console.log("Mensaje de respuesta enviado correctamente.");
     } catch (error) {
-      console.error(
-        "Error enviando respuesta automática al usuario:",
-        error.response?.data || error.message
-      );
+      console.error("Error enviando respuesta automática:", error.response?.data || error.message);
     }
 
-    // Marcar mensaje como leído
+    // Marcar como leído
     try {
       console.log("Marcando mensaje como leído...");
       await axios({
@@ -142,10 +161,7 @@ app.post("/webhook", async (req, res) => {
       });
       console.log("Mensaje marcado como leído.");
     } catch (error) {
-      console.error(
-        "Error marcando mensaje como leído:",
-        error.response?.data || error.message
-      );
+      console.error("Error marcando como leído:", error.response?.data || error.message);
     }
   }
 
