@@ -60,7 +60,7 @@ app.post("/webhook", async (req, res) => {
       const replyText =
         responseLanguage === "es"
           ? "🚫 Este chat no acepta mensajes escritos. Si quieres continuar la conversación, pulsa aquí: https://wa.me/34611417836"
-          : "🚫 This chat does not accept typed messages. If you wanto to continue the conversation, click here: https://wa.me/34611417836";
+          : "🚫 This chat does not accept typed messages. If you want to continue the conversation, click here: https://wa.me/34611417836";
 
       try {
         await axios({
